@@ -12,10 +12,11 @@ export type DelOptions = {
   visitedKeys: Record<string, boolean>
   visitedValues: Set<any>
 }
-export type SaveOptions = {
+export type SaveOptions<SavedObject extends GeneralObject> = {
   nestedSave: boolean
-  visitedValues: Set<any>
+  visitedObject: Set<SavedObject>
 }
+type _SaveOptions<T extends GeneralObject> = SaveOptions<T>
 
 export function createStore<
   SavedObject extends GeneralObject = {
@@ -28,6 +29,7 @@ export function createStore<
   nestedSave?: boolean // default false
   nextKey?: () => string
 }) {
+  type SaveOptions = _SaveOptions<SavedObject>
   const { path: dir } = args
   const keyField = args.keyField || ('_id' as keyof SavedObject)
   const nextKey = args.nextKey || defaultNextKey
@@ -138,10 +140,10 @@ export function createStore<
   }
 
   function set(key: string, value: any, options: SaveOptions) {
-    if (options.visitedValues.has(value)) {
-      return value // return here to avoid dead-loop
+    if (value.toJSON) {
+      set(key, value.toJSON(), options)
+      return
     }
-    options.visitedValues.add(value)
     // preserve top-level object value
     if (Array.isArray(value)) {
       value = value.map(value => mapSavingValue(value, options))
@@ -151,13 +153,17 @@ export function createStore<
         mapSavingValue(value, options),
       ])
     }
-    return store.setObject(key, value)
+    store.setObject(key, value)
   }
 
   function save<T extends SavedObject>(
     object: SavedObject,
     options: SaveOptions,
   ) {
+    if (options.visitedObject.has(object)) {
+      return // return here to avoid dead-loop
+    }
+    options.visitedObject.add(object)
     set(object[keyField] as any, object, options)
   }
 
@@ -175,12 +181,12 @@ export function createStore<
     set: (key: string, value: any, options?: Partial<SaveOptions>) =>
       set(key, value, {
         nestedSave: options?.nestedSave ?? args.nestedSave ?? false,
-        visitedValues: options?.visitedValues || new Set(),
+        visitedObject: options?.visitedObject || new Set(),
       }),
     save: <T extends SavedObject>(object: T, options?: Partial<SaveOptions>) =>
       save(object, {
         nestedSave: options?.nestedSave ?? args.nestedSave ?? false,
-        visitedValues: options?.visitedValues || new Set(),
+        visitedObject: options?.visitedObject || new Set(),
       }),
     del: (key: string, options?: Partial<DelOptions>) =>
       del(key, {
