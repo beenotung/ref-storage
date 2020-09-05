@@ -1,22 +1,30 @@
 import { getNodeStore, Store as _Store } from '@beenotung/tslib/store'
 import fs from 'fs'
 import { isObject } from './helpers'
-import { nextKey } from './key'
+import { nextKey as defaultNextKey } from './key'
 
 export type Store = ReturnType<typeof createStore>
 
-export function createStore(args: {
+export function createStore<
+  SavedObject extends object = { _id: string }
+>(args: {
   path: string
-  keyField?: string // default _id
+  quota?: number
+  keyField?: keyof SavedObject // default _id
+  nestedSave?: boolean
+  nextKey?: () => string
 }) {
-  const dir = args.path
-  const keyField = args.keyField || '_id'
+  const { path: dir, nestedSave } = args
+  const keyField = args.keyField || ('_id' as keyof SavedObject)
+  const nextKey = args.nextKey || defaultNextKey
   fs.mkdirSync(dir, { recursive: true })
-  const storage = getNodeStore(dir)
+  const storage = getNodeStore(dir, args.quota)
   const store = _Store.create(storage)
 
-  function isSavedObject<T>(value: T): T extends object ? true : false {
-    return (isObject(value) && keyField in value) as any
+  // type SavedObject = object & Pick<  Record<Key, string>,Key>
+
+  function isSavedObject(value: any): value is SavedObject {
+    return isObject(value) && keyField in value
   }
 
   function proxy(value: any) {
@@ -35,33 +43,45 @@ export function createStore(args: {
 
   function get(key: string) {
     // TODO handle nested object
-    const value = store.getObject(key)
+    let value = store.getObject(key)
+    if (isObject(value)) {
+      value = Object.fromEntries(
+        Object.entries(value).map(([key, value]) => {
+          if (isSavedObject(value)) {
+            value = get(value[keyField] as any)
+          }
+          return [key, value]
+        }),
+      )
+    }
     return proxy(value)
   }
 
   function set(key: string, value: any) {
-    if (!isObject(value)) {
-      return store.setObject(key, value)
-    }
-    // TODO handle nested object
-    value = Object.fromEntries(
-      Object.entries(value).map(([key, value]: [string, any]) => {
-        if (!isSavedObject(value)) {
+    if (isObject(value)) {
+      // TODO handle array
+      // handle nested object
+      value = Object.fromEntries(
+        Object.entries(value).map(([key, value]: [string, any]) => {
+          if (isSavedObject(value) && Object.keys(value).length > 1) {
+            if (nestedSave) {
+              save(value)
+            }
+            value = { [keyField]: value[keyField] }
+          }
           return [key, value]
-        }
-        save(value)
-        return [key, { [keyField]: value[keyField] }]
-      }),
-    )
-    // TODO handle array
+        }),
+      )
+    }
+    return store.setObject(key, value)
   }
 
-  function save(_object: object) {
-    const object = _object as any
+  function save<T extends SavedObject>(object: T): T & SavedObject {
     if (!(keyField in object)) {
-      object[keyField] = getNewKey()
+      object[keyField] = getNewKey() as any
     }
-    set(object[keyField], object)
+    set(object[keyField] as any, object)
+    return object
   }
 
   function clear() {

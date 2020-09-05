@@ -1,3 +1,3 @@
-export function isObject<T>(value: T): T extends object ? true : false {
-  return (value !== null && typeof value === 'object') as any
+export function isObject(value: any): value is object {
+  return value !== null && typeof value === 'object'
 }

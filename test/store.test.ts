@@ -30,7 +30,7 @@ describe('Store TestSuit', function () {
     expect(store.get('user-12')).toEqual(user)
   })
   it('should auto assign id when save object', function () {
-    const user = wrapSavedObject({ name: 'Alice' })
+    const user = castSavedObject({ name: 'Alice' })
     store.save(user)
     expect(user).toHaveProperty('_id')
     expect(user._id.length > 0)
@@ -42,15 +42,30 @@ describe('Store TestSuit', function () {
       author: user,
       content: 'Hello world',
     })
+    store.save({
+      _id: 'post',
+      author: user,
+      content: 'Hello',
+    })
     store.save(post)
     user.name = 'Bob'
     store.save(user)
     expect(store.get(user._id)).toEqual(user)
     expect(store.get(post._id)).toEqual(post)
   })
+  it('should inline non-keyed objects', function () {
+    const user = {
+      name: 'Alice',
+      friends: {
+        Bob: { since: 'today' },
+        Charlie: { since: 'tomorrow' },
+      },
+    }
+    store.save(user)
+  })
 })
 
-function wrapSavedObject<T>(object: T): T & { _id: string } {
+function castSavedObject<T extends object>(object: T): T & { _id: string } {
   return object as any
 }
 
