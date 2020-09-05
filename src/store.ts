@@ -12,6 +12,10 @@ export type DelOptions = {
   visitedKeys: Record<string, boolean>
   visitedValues: Set<any>
 }
+export type SaveOptions = {
+  nestedSave: boolean
+  visitedValues: Set<any>
+}
 
 export function createStore<
   SavedObject extends GeneralObject = {
@@ -21,10 +25,10 @@ export function createStore<
   path: string
   quota?: number
   keyField?: keyof SavedObject // default _id
-  nestedSave?: boolean
+  nestedSave?: boolean // default false
   nextKey?: () => string
 }) {
-  const { path: dir, nestedSave } = args
+  const { path: dir } = args
   const keyField = args.keyField || ('_id' as keyof SavedObject)
   const nextKey = args.nextKey || defaultNextKey
   fs.mkdirSync(dir, { recursive: true })
@@ -111,37 +115,50 @@ export function createStore<
     return mapGettingValue(value, cache)
   }
 
-  function mapSavingValue(value: any): any {
+  function mapSavingValue(value: any, options: SaveOptions): any {
     if (Array.isArray(value)) {
-      return value.map(mapSavingValue)
+      return value.map(value => mapSavingValue(value, options))
     }
     if (isSavedObjectRef(value)) {
       return value
     }
     if (isSavedObjectValue(value)) {
-      if (nestedSave) {
-        save(value)
+      if (options.nestedSave) {
+        save(value, options)
       }
       return { [keyField]: value[keyField] }
     }
     if (isObject(value)) {
-      return mapObject(value, ([key, value]) => [key, mapSavingValue(value)])
+      return mapObject(value, ([key, value]) => [
+        key,
+        mapSavingValue(value, options),
+      ])
     }
     return value
   }
 
-  function set(key: string, value: any) {
+  function set(key: string, value: any, options: SaveOptions) {
+    if (options.visitedValues.has(value)) {
+      return value // return here to avoid dead-loop
+    }
+    options.visitedValues.add(value)
     // preserve top-level object value
     if (Array.isArray(value)) {
-      value = value.map(mapSavingValue)
+      value = value.map(value => mapSavingValue(value, options))
     } else if (isObject(value)) {
-      value = mapObject(value, ([key, value]) => [key, mapSavingValue(value)])
+      value = mapObject(value, ([key, value]) => [
+        key,
+        mapSavingValue(value, options),
+      ])
     }
     return store.setObject(key, value)
   }
 
-  function save<T extends SavedObject>(object: SavedObject) {
-    set(object[keyField] as any, object)
+  function save<T extends SavedObject>(
+    object: SavedObject,
+    options: SaveOptions,
+  ) {
+    set(object[keyField] as any, object, options)
   }
 
   function clear() {
@@ -155,11 +172,19 @@ export function createStore<
 
   return {
     get: (key: string, cache: Cache = {}) => get(key, cache),
-    set,
-    save,
+    set: (key: string, value: any, options?: Partial<SaveOptions>) =>
+      set(key, value, {
+        nestedSave: options?.nestedSave ?? args.nestedSave ?? false,
+        visitedValues: options?.visitedValues || new Set(),
+      }),
+    save: <T extends SavedObject>(object: T, options?: Partial<SaveOptions>) =>
+      save(object, {
+        nestedSave: options?.nestedSave ?? args.nestedSave ?? false,
+        visitedValues: options?.visitedValues || new Set(),
+      }),
     del: (key: string, options?: Partial<DelOptions>) =>
       del(key, {
-        recursive: options?.recursive || false,
+        recursive: options?.recursive ?? false,
         cache: options?.cache || {},
         visitedKeys: options?.visitedKeys || {},
         visitedValues: options?.visitedValues || new Set(),

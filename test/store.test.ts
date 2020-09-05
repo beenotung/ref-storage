@@ -83,20 +83,18 @@ describe('Store TestSuit', function () {
     store.save(bob)
     expect(store.get('users')).toEqual(users)
   })
-  it('should handle cyclic-referenced object', function () {
+  it('should save and load cyclic-referenced object', function () {
     const user = {
       _id: 'user',
       posts: [] as any[],
     }
-    store.save(user)
     const post = {
       _id: 'post',
       content: 'Hello world',
       author: user,
     }
-    store.save(post)
     user.posts.push(post)
-    store.save(user)
+    store.save(post, { nestedSave: true })
     const loadedUser = store.get('user', { post })
     expect(loadedUser).toEqual(user)
   })
