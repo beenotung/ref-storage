@@ -1,10 +1,12 @@
-import { createStore, Store } from '../src/store'
+import { Cache, createStore } from '../src/store'
+import { GeneralObject } from '../src/types'
 
 describe('Store TestSuit', function () {
-  let store: Store
-  beforeAll(() => {
-    store = createStore({ path: 'data' })
-  })
+  const store = createStore<
+    {
+      _id: string
+    } & GeneralObject
+  >({ path: 'data' })
   it('should clear store', function () {
     store.clear()
   })
@@ -24,16 +26,20 @@ describe('Store TestSuit', function () {
       name: 'Alice',
     })
   })
+  it('should delete values', function () {
+    for (const key of ['num', 'str', 'user']) {
+      store.del(key)
+      expect(store.get(key)).toBeNull()
+    }
+  })
   it('should save object', function () {
     const user = { _id: 'user-12', name: 'Alice' }
     store.save(user)
     expect(store.get('user-12')).toEqual(user)
   })
-  it('should auto assign id when save object', function () {
-    const user = castSavedObject({ name: 'Alice' })
-    store.save(user)
-    expect(user).toHaveProperty('_id')
-    expect(user._id.length > 0)
+  it('should generate key for new object', function () {
+    const key = store.getNewKey()
+    expect(key.length > 0)
   })
   it('should store nested objects', function () {
     const user = makeSavedObject('user', { name: 'Alice' })
@@ -54,20 +60,66 @@ describe('Store TestSuit', function () {
     expect(store.get(post._id)).toEqual(post)
   })
   it('should inline non-keyed objects', function () {
-    const user = {
+    const user = makeSavedObject('Alice', {
       name: 'Alice',
       friends: {
         Bob: { since: 'today' },
         Charlie: { since: 'tomorrow' },
       },
-    }
+    })
     store.save(user)
   })
-})
+  it('should store array', function () {
+    const alice = makeSavedObject('alice', { name: 'Alice', level: 1 })
+    store.save(alice)
+    const bob = makeSavedObject('bob', { name: 'Bob', level: 2 })
+    store.save(bob)
+    const users = makeSavedObject('users', { users: [alice, bob] })
+    store.save(users)
 
-function castSavedObject<T extends object>(object: T): T & { _id: string } {
-  return object as any
-}
+    alice.level = 10
+    store.save(alice)
+    bob.level = 20
+    store.save(bob)
+    expect(store.get('users')).toEqual(users)
+  })
+  it('should handle cyclic-referenced object', function () {
+    const user = {
+      _id: 'user',
+      posts: [] as any[],
+    }
+    store.save(user)
+    const post = {
+      _id: 'post',
+      content: 'Hello world',
+      author: user,
+    }
+    store.save(post)
+    user.posts.push(post)
+    store.save(user)
+    const loadedUser = store.get('user', { post })
+    expect(loadedUser).toEqual(user)
+  })
+  it('should delete cyclic-referenced object', function () {
+    const user = { _id: 'user', posts: [] as any[] }
+    store.save(user)
+    const cache: Cache = {}
+    for (let i = 0; i < 3; i++) {
+      const post = {
+        _id: 'post-' + i,
+        author: user,
+        content: 'Content of Post ' + i,
+      }
+      store.save(post)
+      cache[post._id] = post
+      user.posts.push(post)
+      store.save(user)
+    }
+    expect(store.get('user', cache)).toEqual(user)
+    store.del('user', { recursive: true, cache })
+    expect(store.get('user')).toBeNull()
+  })
+})
 
 function makeSavedObject<T extends object>(
   key: string,
