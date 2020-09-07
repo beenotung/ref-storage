@@ -37,10 +37,6 @@ describe('Store TestSuit', function () {
     store.save(user)
     expect(store.get('user-12')).toEqual(user)
   })
-  it('should generate key for new object', function () {
-    const key = store.getNewKey()
-    expect(key.length > 0)
-  })
   it('should store nested objects', function () {
     const user = makeSavedObject('user', { name: 'Alice' })
     store.save(user)
@@ -116,6 +112,25 @@ describe('Store TestSuit', function () {
     expect(store.get('user', cache)).toEqual(user)
     store.del('user', { recursive: true, cache })
     expect(store.get('user')).toBeNull()
+  })
+  it('should reconstruct cyclic reference on key-ed object', function () {
+    // populate key-ed sample data
+    const user = {
+      _id: 'user-1',
+      name: 'Alice',
+      posts: [] as any[],
+    }
+    const post = {
+      _id: 'post-1',
+      title: 'Hello world',
+      author: user,
+    }
+    user.posts.push(post)
+    store.save(post, { nestedSave: true })
+
+    // load data with cyclic reference on key-ed object
+    const loadedPost = store.get('post-1')
+    expect(loadedPost).toEqual(loadedPost.author.posts[0])
   })
 })
 

@@ -1,6 +1,5 @@
 import { getLocalStorage, Store as _Store } from '@beenotung/tslib/store'
-import { isObject, mapObject } from './helpers'
-import { nextKey as defaultNextKey } from './key'
+import { isObject, mapObject } from './internal/helpers'
 import { GeneralObject } from './types'
 
 export type Store = ReturnType<typeof createStore>
@@ -25,7 +24,6 @@ export function createStore<
   args: {
     keyField?: keyof SavedObject // default _id
     nestedSave?: boolean // default false
-    nextKey?: () => string
   } & (
     | {
         path: string
@@ -41,7 +39,6 @@ export function createStore<
     'storage' in args ? args.storage : getLocalStorage(args.path, args.quota)
   const store = _Store.create(storage)
   const keyField = args.keyField || ('_id' as keyof SavedObject)
-  const nextKey = args.nextKey || defaultNextKey
 
   function isSavedObject(value: any): value is SavedObject {
     return isObject(value) && keyField in value
@@ -94,20 +91,21 @@ export function createStore<
     delete options.cache[key]
   }
 
-  function mapGettingValue(value: any, cache: Record<string, any>): any {
+  function expandGettingValue(object: any, key: any, value: any, cache: Cache) {
     if (Array.isArray(value)) {
-      return value.map(value => mapGettingValue(value, cache))
+      value.forEach((val, i) => expandGettingValue(value, i, val, cache))
+      return
     }
     if (isSavedObjectRef(value)) {
-      return get(value[keyField] as any, cache)
+      object[key] = get(value[keyField] as any, cache)
+      return
     }
     if (isObject(value)) {
-      return mapObject(value, ([key, value]) => {
-        value = mapGettingValue(value, cache)
-        return [key, value]
-      })
+      Object.entries(value).forEach(([k, v]) =>
+        expandGettingValue(value, k, v, cache),
+      )
+      return
     }
-    return value
   }
 
   function get(key: string, cache: Cache) {
@@ -120,7 +118,14 @@ export function createStore<
       // the raw object is empty
       return value // return here to avoid dead-loop
     }
-    return mapGettingValue(value, cache)
+    if (Array.isArray(value)) {
+      value.forEach((v, i) => expandGettingValue(value, i, v, cache))
+    } else if (isObject(value)) {
+      Object.entries(value).forEach(([k, v]) =>
+        expandGettingValue(value, k, v, cache),
+      )
+    }
+    return value
   }
 
   function mapSavingValue(value: any, options: SaveOptions): any {
@@ -177,11 +182,6 @@ export function createStore<
     store.clear()
   }
 
-  function getNewKey(): string {
-    // TODO check to make sure the key is non-existing
-    return nextKey()
-  }
-
   return {
     get: (key: string, cache: Cache = {}) => get(key, cache),
     set: (key: string, value: any, options?: Partial<SaveOptions>) =>
@@ -202,6 +202,5 @@ export function createStore<
         visitedValues: options?.visitedValues || new Set(),
       }),
     clear,
-    getNewKey,
   }
 }

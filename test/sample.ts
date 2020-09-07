@@ -2,6 +2,7 @@ import { allNames } from '@beenotung/tslib/constant/character-name'
 import { format_time_duration } from '@beenotung/tslib/format'
 import { Random } from '@beenotung/tslib/random'
 import { MB } from '@beenotung/tslib/size'
+import { nextKey as getNewKey } from '../src/helpers'
 import { createStore } from '../src/store'
 
 const store = createStore<{ id: string }>({
@@ -10,7 +11,7 @@ const store = createStore<{ id: string }>({
   keyField: 'id',
 })
 store.clear()
-const { save, get, getNewKey } = store
+const { save, get } = store
 
 const rootUser = { id: 'root', name: 'Admin', posts: [] as any[], comments: [] }
 save(rootUser)

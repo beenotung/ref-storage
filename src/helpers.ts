@@ -1,10 +1,13 @@
-export function isObject(value: any): value is object {
-  return value !== null && typeof value === 'object'
-}
+let lastTime = 0
+let acc = 0
 
-export function mapObject(
-  object: object,
-  mapper: (entry: [string, any]) => [string, any],
-) {
-  return Object.fromEntries(Object.entries(object).map(mapper))
+export function nextKey(separator = '-'): string {
+  const now = Date.now()
+  if (now !== lastTime) {
+    lastTime = now
+    acc = 0
+  }
+  const key = now + separator + acc
+  acc++
+  return key
 }
