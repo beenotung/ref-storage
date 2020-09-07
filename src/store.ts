@@ -1,5 +1,4 @@
-import { getNodeStore, Store as _Store } from '@beenotung/tslib/store'
-import fs from 'fs'
+import { getLocalStorage, Store as _Store } from '@beenotung/tslib/store'
 import { isObject, mapObject } from './helpers'
 import { nextKey as defaultNextKey } from './key'
 import { GeneralObject } from './types'
@@ -22,20 +21,27 @@ export function createStore<
   SavedObject extends GeneralObject = {
     _id: string
   } & GeneralObject
->(args: {
-  path: string
-  quota?: number
-  keyField?: keyof SavedObject // default _id
-  nestedSave?: boolean // default false
-  nextKey?: () => string
-}) {
+>(
+  args: {
+    keyField?: keyof SavedObject // default _id
+    nestedSave?: boolean // default false
+    nextKey?: () => string
+  } & (
+    | {
+        path: string
+        quota?: number
+      }
+    | {
+        storage: Storage
+      }
+  ),
+) {
   type SaveOptions = _SaveOptions<SavedObject>
-  const { path: dir } = args
+  const storage =
+    'storage' in args ? args.storage : getLocalStorage(args.path, args.quota)
+  const store = _Store.create(storage)
   const keyField = args.keyField || ('_id' as keyof SavedObject)
   const nextKey = args.nextKey || defaultNextKey
-  fs.mkdirSync(dir, { recursive: true })
-  const storage = getNodeStore(dir, args.quota)
-  const store = _Store.create(storage)
 
   function isSavedObject(value: any): value is SavedObject {
     return isObject(value) && keyField in value
